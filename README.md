@@ -9,7 +9,7 @@ This project analyzes 12 months of ride data from the Divvy/Cyclistic bike-share
 
 ## Files
 - `Cyclistic_new.Rmd` – Full R Markdown notebook (includes all code and commentary)
-- `Cyclistic_new.html` – Rendered HTML report with charts and interactive Leaflet maps
+- [**Cyclistic_new.html**](https://mehran-ho.github.io/Cyclistic/Cyclistic_new.html) – Rendered HTML report with charts and interactive Leaflet maps
 
 ## Data Source
 Monthly ride data available at the [Divvy System Data Portal](https://divvybikes.com/system-data)
