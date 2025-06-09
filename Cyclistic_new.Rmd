@@ -1,0 +1,565 @@
+---
+title: "Cyclistic Bike Share using R"
+author: "Mehran Hojati"
+date: "2025-06-07"
+Platform: RStudio
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This is the report of the capstone project for my Google Data Analytics Professional Certificate program. I am using R programming language and RStudio Desktop. Note that the free version of RStudio Cloud cannot handle the amount of data needed for this project.   
+
+## Scenario
+I am a junior data analyst working in the marketing team of Cyclistic, a bike-share company in Chicago. Note: This is a fictional name, but the company is real and is called Divvy <https://divvybikes.com>. The director of marketing believes that the company’s future success depends on maximizing the number of annual memberships. My team wants to understand how casual riders and annual members use Cyclistic bikes differently. From these insights, my team will design a new marketing strategy to convert casual riders into annual members. But first, Cyclistic executives must approve my recommendations, so my recommendations must be backed up with compelling data insights and professional data visualizations.
+
+## Ask
+Three questions will guide the future marketing program:
+
+1. How do annual members and casual riders use bikes differently?
+2. Why would casual riders buy annual membership?
+3. How can we use digital media to influence casual riders to become annual members?
+
+The director of marketing and my manager, Lily Moreno, has assigned me the first question to answer.
+
+## Prepare
+I use Cyclistic’s monthly trip data <https://divvy-tripdata.s3.amazonaws.com/index.html>.  According to Divvy <https://divvybikes.com/system-data>, the data has been processed to remove trips that are taken by staff as they service and inspect the system, and any trips that were below 60 seconds in length (potentially false starts or users trying to re-dock a bike to ensure it was secure).  
+To see the effect of all seasons on rides, 12 months of data is used.  To make it easier to understand the seasonality, the period from January to December 2024 is used.  
+The data was downloaded to the RStudio work directory on my computer. To identify the work directory, I used the getwd() command. All trip data is in comma-delimited (.CSV) format. 
+
+```{r install and load necessary packages}
+library(tidyverse)
+library(lubridate)
+library(patchwork)
+library(sf)
+library(leaflet)
+library(purrr)
+library(viridis)
+```
+
+```{r import data in R studio}
+jan24 <- read_csv("202401-divvy-tripdata.csv") # I made sure that these files were in my local RStudio work directory
+feb24 <- read_csv("202402-divvy-tripdata.csv")
+mar24 <- read_csv("202403-divvy-tripdata.csv")
+apr24 <- read_csv("202404-divvy-tripdata.csv")
+may24 <- read_csv("202405-divvy-tripdata.csv")
+jun24 <- read_csv("202406-divvy-tripdata.csv")
+jul24 <- read_csv("202407-divvy-tripdata.csv")
+aug24 <- read_csv("202408-divvy-tripdata.csv")
+sep24 <- read_csv("202409-divvy-tripdata.csv")
+oct24 <- read_csv("202410-divvy-tripdata.csv")
+nov24 <- read_csv("202411-divvy-tripdata.csv")
+dec24 <- read_csv("202412-divvy-tripdata.csv")
+```
+
+I Checked in my RStudio Environment pane to make sure these files were actually uploaded.  Then, I vertically merged these files into tripdata table.
+
+```{r merge individual monthly data tables into one large data table}
+tripdata <- bind_rows(jan24, feb24, mar24, apr24, may24, jun24, jul24, aug24, sep24, oct24, nov24, dec24)
+```
+
+## Process
+Clean and Prepare data for analysis.
+
+```{r check structure and quality of tripdata}
+colnames(tripdata)
+str(tripdata)
+summary(tripdata)
+head(tripdata)
+colSums(is.na(tripdata))
+```
+
+There are 13 columns (variables) and over 5.8 million rows (rides).  The Min and Max of end_lat and end_lng are far from Chicago, probably due to signal drift, station mislabeling, or technical glitches. Also, approximately 7000 end_lat and end_lng are null (NA).   In addition, over 1 million station names and ids are null (NA) which are likely due to dockless stations or any other place the riders abandoned their bike. 
+
+To see if there are any ride_id duplicates:
+
+```{r duplicates}
+sum(duplicated(tripdata$ride_id))
+```
+
+There are 211 ride_id duplicate rows.
+
+```{r removing the ride_id duplicate rows}
+tripdata_unique <- tripdata[!duplicated(tripdata$ride_id), ]
+```
+
+Next, I filtered out the coordinates that were outside Chicago in order to prevent map distortion.
+
+```{r filter observations within Chicago latitudes and longtitudes}
+tripdata_clean_lat_lng <- tripdata_unique %>%
+  filter(
+    between(start_lat, 41.6, 42.1),
+    between(start_lng, -88.0, -87.5),
+    between(end_lat, 41.6, 42.1),
+    between(end_lng, -88.0, -87.5)
+  )
+```
+
+For later analysis, I calculated the ride_lengths,   
+
+```{r calculate ride length in minutes using floor()} 
+# This ensures consistency with BigQuery's TIMESTAMP_DIFF(..., MINUTE), which truncates fractional minutes.
+tripdata_clean_lat_lng <- tripdata_clean_lat_lng %>% 
+  mutate(ride_length = floor(as.numeric(difftime(ended_at, started_at, units = "mins"))))
+```  
+
+and summarized the ride_lengths:
+
+```{r summarize ride_length}
+summary(tripdata_clean_lat_lng$ride_length)
+```
+I saw that the min was negative, which is impossible.  Therefore, I filtered out observations with negative ride_length as well as any observations with ride_length < 1 minute (potentially false starts or users trying to re-dock a bike to ensure it was secure). 
+
+```{r clean dataframe}
+tripdata_clean <- tripdata_clean_lat_lng %>%
+  filter(ride_length >= 1) 
+```
+
+
+## Analyze
+Compare annual members and casual riders 
+
+```{r total rides Member vs casual}
+tripdata_clean %>% 
+  group_by(member_casual) %>% 
+  summarise(
+    ride_count = n(),
+    ride_percentage = round((n() / nrow(tripdata_clean)) * 100, 2)
+  )
+```
+
+Members take nearly twice as many rides as casuals.
+
+```{r member vs casual ride lengths}
+tripdata_clean %>%
+  group_by(member_casual) %>%
+  summarise(
+    average_ride_length = round(mean(ride_length), 2),
+    median_length = round(median(ride_length), 2),
+    max_ride_length = round(max(ride_length), 2),
+    min_ride_length = round(min(ride_length), 2)
+  )
+```
+
+Casual riders take 1.5 to 2 times longer rides than annual members on average.
+
+All riders are charged an extra fee for each minute the ride is over 3 hours. So, it is informative to analyze rides with ride_length <= 180 minutes and ride_length > 180 minutes. 
+
+```{r plot of member vs casual ride lengths under 180 mins}
+filtered_data <- tripdata_clean %>%
+  filter(ride_length <= 180)
+
+ggplot(filtered_data, aes(x = ride_length, fill = member_casual)) +
+  geom_histogram(binwidth = 2) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE) ) +
+  labs(title = "Distribution of Ride Lengths (≤ 180 mins)",
+       x = "Ride Length (minutes)",
+       y = "Count") +
+  facet_wrap(~member_casual, ncol = 2) +
+  theme(legend.position = "none") 
+```
+Casual riders tend to take longer rides than members, with a broader spread and a heavier tail.
+
+```{r member vs casual ride lengths over 180 mins}
+tripdata_clean %>%
+  filter(ride_length > 180) %>%
+  group_by(member_casual) %>%
+  summarise(
+    long_ride_count = n(),
+    percentage = round((n() / nrow(tripdata_clean)) * 100, 2)
+  )
+```
+
+Casual riders are more than twice as likely as members to take ultra-long rides.  While both percentages are small, the absolute number of casual long rides is significant: almost 10,000 instances.
+
+### Seasonality?
+
+```{r seasonality}
+tripdata_clean <- tripdata_clean %>%
+  mutate(
+    month = format(as.Date(started_at), "%B"),
+    month = factor(month, levels = c(
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ), ordered = TRUE)
+  )
+seasonality_summary <- tripdata_clean %>%
+  group_by(member_casual, month) %>%
+  summarise(
+    number_of_rides = n(),
+    average_ride_length = round(mean(ride_length),2),
+    .groups = "drop"
+  ) %>%
+  arrange(member_casual, month)
+```
+
+```{r seasonality plots}
+# Plot 1
+p1 <- seasonality_summary %>%
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) +
+  geom_col(width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(title = "Number of Rides", x = "Month", y = "Number of Rides") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+# Plot 2
+p2 <- seasonality_summary %>%
+  ggplot(aes(x = month, y = average_ride_length, fill = member_casual)) +
+  geom_col(width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(title = "Average Ride Lengths", x = "Month", y = "Average Ride Length (minutes)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Combine them
+combined_plot <- p1 / p2 +
+  plot_annotation(
+    title = "Seasonality Analysis: Number of Rides and Average Ride Lengths",
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  )
+# Show the combined plot
+combined_plot
+```
+
+Both user types bike more in the summer. Members ride more than casual riders in every month. Average ride lengths are longer in the summer, especially for casual riders. Casual riders have longer average ride lengths than members in every month.
+
+### Day of week effect?
+
+```{r day_of_week effect}
+tripdata_clean <- tripdata_clean %>% 
+  mutate(
+    day_of_week = format(as.Date(started_at), "%A"),
+    day_of_week = factor(day_of_week, 
+                         levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"),
+                         ordered = TRUE)
+  ) 
+day_summary <- tripdata_clean %>%
+  group_by(member_casual, day_of_week) %>%  
+  summarise(
+    number_of_rides = n(), 
+    average_ride_length = round(mean(ride_length),2),
+    .groups = "drop"
+  ) %>%
+  arrange(member_casual, day_of_week)
+```
+
+```{r plot of day_of_week effect}
+p1 <- day_summary %>%
+  ggplot(aes(x = day_of_week, y = number_of_rides, fill = member_casual)) +
+    geom_col(width=0.5, position = position_dodge(width=0.5)) +
+    labs(title ="Total Rides", x = "Day of the Week", y = "Number of Rides") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+p2 <- day_summary %>%
+  ggplot(aes(x = day_of_week, y = average_ride_length, fill = member_casual)) +
+  geom_col(width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(title = "Average Ride Lengths", x = "Day of the Week", y = "Average Ride Length (minutes)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+combined_plot <- p1 / p2 +
+  plot_annotation(
+    title = "Day-of-week Analysis: Number of Rides and Average Ride Lengths",
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  )
+# Show the combined plot
+combined_plot 
+```
+
+Members consistently take more rides than casuals every day of the week. Weekdays (Mon–Fri) show a steady, high volume of member rides — consistent with commuting behavior. Casual ridership peaks on weekends, suggesting leisure or recreation.
+
+Casual riders consistently take longer rides than members every day of the week. Casual ride lengths peak on Sunday and Saturday.  Member ride lengths are shorter and relatively stable across the week.
+
+### Hour of day effect? 
+
+```{r Hour_of_day effect}
+tripdata_clean <- tripdata_clean %>% 
+  mutate(start_hour = as.numeric(strftime(started_at, "%H")))
+
+hour_summary <- tripdata_clean %>%
+  group_by(member_casual, start_hour) %>%  
+  summarise(
+    number_of_rides = n(), 
+    average_ride_length = round(mean(ride_length),2),
+    .groups = "drop"
+  ) %>%
+  arrange(member_casual, start_hour)
+```
+
+```{r plot of hour_summary}
+
+p1 <- ggplot(hour_summary, aes(x = start_hour, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  scale_x_continuous(breaks = 0:23) +
+  labs(title = "Total Rides", x = "Hour of the Day", y = "Number of Rides") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2 <- ggplot(hour_summary, aes(x = start_hour, y = average_ride_length, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  scale_x_continuous(breaks = 0:23) +
+  labs(title = "Average Ride Lengths", x = "Hour of the Day", y = "Avg Ride Length (min)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+combined_plot <- p1 / p2 +
+  plot_annotation(
+    title = "Hour-of-day Analysis: Number of Rides and Average Ride Lengths",
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  )
+
+combined_plot
+```
+Demand of members for bikes is higher than casuals during every hour of the day.  For both groups the peak demand occurs just after noon, but members have another lower peak during early mornings, showing a commuter-like pattern, whereas casuals' demand distribution suggest a leisure/tourism behavior.  
+The average ride length is steady for members throughout the day suggesting a commuter pattern, but casuals' average ride length peaks in the morning suggesting a lesiure pattern. Casual ride lengths are longer than members during every hour of the day.
+
+```{r hour of day by day of week}
+ggplot(tripdata_clean, aes(x = start_hour, fill = member_casual)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ day_of_week) +
+  labs(
+    title = "Bike Demand by Hour and Day of Week",
+    x = "Hour of the Day",
+    y = "Number of Rides"
+  ) +
+  scale_x_continuous(breaks = 0:23) +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+The demand by hour for each day of the week clearly shows that members do have commuter behavior during the week days but in the weekend they behave leasurely, like casuals.  
+
+### Top start stations?
+
+```{r top 10 start stations for members}
+
+top_member <- tripdata_clean %>%
+  filter(member_casual == "member", !is.na(start_station_name)) %>%
+  group_by(start_station_name) %>%
+  summarise(start_count = n(), .groups = "drop") %>%
+  slice_max(start_count, n = 10)
+
+top_member_coords <- tripdata_clean %>%
+  filter(member_casual == "member", start_station_name %in% top_member$start_station_name) %>%
+  group_by(start_station_name) %>%
+  summarise(
+    start_lat = mean(start_lat, na.rm = TRUE),
+    start_lng = mean(start_lng, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+top_member <- left_join(top_member, top_member_coords, by = "start_station_name")
+```
+
+```{r map of top 10 member starting stations}
+m1 <- leaflet(data = top_member) %>%    # interactive map
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+  setView(lng = -87.63, lat = 41.85, zoom = 11) %>%  # Sets the **initial center and zoom level** of the map view.
+  addCircles(
+    lng = ~start_lng,
+    lat = ~start_lat,
+    radius = ~sqrt(start_count) * 2,  
+    color = "#1f78b4",
+    stroke = FALSE,   # no outline
+    fillOpacity = 0.6,
+    label = ~paste0(start_station_name, ": ", start_count, " rides")
+  ) %>%
+  addControl("<strong>Top 10 Start Stations for Members</strong>", position = "topright")
+m1
+```
+
+Most of the top 10 starting stations for members are concentrated in downtown Chicago, with additional clusters near residential areas on the North and South Sides.
+
+```{r top 10 casual starting stations}
+top_casual <- tripdata_clean %>%
+  filter(member_casual == "casual", !is.na(start_station_name)) %>%
+  group_by(start_station_name) %>%
+  summarise(start_count = n(), .groups = "drop") %>%
+  slice_max(start_count, n = 10)
+
+top_casual_coords <- tripdata_clean %>%
+  filter(member_casual == "casual", start_station_name %in% top_casual$start_station_name) %>%
+  group_by(start_station_name) %>%
+  summarise(
+    start_lat = mean(start_lat, na.rm = TRUE),
+    start_lng = mean(start_lng, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+top_casual <- left_join(top_casual, top_casual_coords, by = "start_station_name")
+
+m2 <- leaflet(data = top_casual) %>%
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+  setView(lng = -87.63, lat = 41.89, zoom = 12) %>%
+  addCircles(
+    lng = ~start_lng,
+    lat = ~start_lat,
+    radius = ~sqrt(start_count)* 2,  # adjust multiplier to your data
+    color = "#e31a1c",
+    stroke = FALSE,
+    fillOpacity = 0.6,
+    label = ~paste0(start_station_name, ": ", start_count, " rides")
+  ) %>%
+  addControl("<strong>Top 10 Start Stations for Casuals</strong>", position = "topright")
+m2
+```
+
+The top 10 starting stations for casual users are heavily clustered along the lakefront and near downtown tourist areas, reflecting strong recreational and sightseeing usage.
+
+### Top routes for members
+
+```{r plot-of-top-10-routes-by-members}
+
+# Step 1: Identify top 10 member routes by name
+top_member_routes <- tripdata_clean %>%
+  filter(member_casual == "member", !is.na(start_station_name), !is.na(end_station_name)) %>%
+  group_by(start_station_name, end_station_name) %>%
+  summarise(route_count = n(), .groups = "drop") %>%
+  slice_max(route_count, n = 10)
+
+# Step 2: Get average coordinates for start and end stations
+station_coords <- tripdata_clean %>%
+  filter(!is.na(start_station_name), !is.na(end_station_name)) %>%
+  group_by(start_station_name, end_station_name) %>%
+  summarise(
+    start_lat = mean(start_lat, na.rm = TRUE),
+    start_lng = mean(start_lng, na.rm = TRUE),
+    end_lat   = mean(end_lat, na.rm = TRUE),
+    end_lng   = mean(end_lng, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Step 3: Merge coordinates with top routes and jitter self-loops
+top_member_routes <- left_join(top_member_routes, station_coords,
+                               by = c("start_station_name", "end_station_name")) %>%
+  mutate(
+    is_self_loop = start_station_name == end_station_name,
+    end_lat_jittered = ifelse(is_self_loop, start_lat + runif(n(), 0.002, 0.004), end_lat),
+    end_lng_jittered = ifelse(is_self_loop, start_lng + runif(n(), 0.002, 0.004), end_lng)
+  )
+
+# Step 4: Create LINESTRING geometry 
+member_sf <- st_sf(
+  top_member_routes,
+  geometry = st_sfc(
+    pmap(
+      list(top_member_routes$start_lng, top_member_routes$start_lat,
+           top_member_routes$end_lng_jittered, top_member_routes$end_lat_jittered),
+      ~ st_linestring(matrix(c(..1, ..2, ..3, ..4), ncol = 2, byrow = TRUE))
+    ),
+    crs = 4326
+  )
+)
+
+# Step 5: Leaflet map 
+leaflet(member_sf) %>%
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+  addPolylines(
+    color = "#1f78b4",  # standard blue for members
+    weight = 6,
+    opacity = 1,
+    label = ~paste0(start_station_name, " → ", end_station_name, " (", route_count, " rides)")
+  ) %>%
+  setView(lng = -87.63, lat = 41.84, zoom = 12) %>%
+  addControl("<strong>Top 10 Routes for Member (with self-loops jittered)</strong>", position = "topright")
+```
+
+The top 10 routes by members are primarily concentrated in the Hyde Park and South Shore areas, with a couple of high-traffic segments extending into the West Side.
+
+```{r plot-of-top-10-routes-by-casuals}
+
+### Top routes for casuals
+
+# Get top 10 routes for casuals
+top_casual_routes <- tripdata_clean %>%
+  filter(member_casual == "casual", !is.na(start_station_name), !is.na(end_station_name)) %>%
+  group_by(start_station_name, end_station_name) %>%
+  summarise(route_count = n(), .groups = "drop") %>%
+  slice_max(route_count, n = 10)
+
+# Get average coordinates for each start and end station
+casual_coords <- tripdata_clean %>%
+  filter(!is.na(start_station_name), !is.na(end_station_name)) %>%
+  group_by(start_station_name, end_station_name) %>%
+  summarise(
+    start_lat = mean(start_lat, na.rm = TRUE),
+    start_lng = mean(start_lng, na.rm = TRUE),
+    end_lat   = mean(end_lat, na.rm = TRUE),
+    end_lng   = mean(end_lng, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Merge coordinates with top routes
+top_casual_routes <- left_join(top_casual_routes, casual_coords,
+                               by = c("start_station_name", "end_station_name"))
+
+# Jitter self-loop coordinates
+top_casual_routes <- top_casual_routes %>%
+  mutate(
+    is_self_loop = start_station_name == end_station_name,
+    end_lat_jittered = ifelse(is_self_loop, start_lat + runif(n(), 0.002, 0.004), end_lat),
+    end_lng_jittered = ifelse(is_self_loop, start_lng + runif(n(), 0.002, 0.004), end_lng)
+  )
+
+# Create sf object
+casual_sf <- st_sf(
+  top_casual_routes,
+  geometry = st_sfc(
+    pmap(
+      list(top_casual_routes$start_lng, top_casual_routes$start_lat,
+           top_casual_routes$end_lng_jittered, top_casual_routes$end_lat_jittered),
+      ~ st_linestring(matrix(c(..1, ..2, ..3, ..4), ncol = 2, byrow = TRUE))
+    ),
+    crs = 4326
+  )
+)
+
+# Draw leaflet map
+leaflet(casual_sf) %>%
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+  addPolylines(
+    color = "#e31a1c",  # standard red for casuals
+    weight = 6,
+    opacity = 1,
+    label = ~paste0(start_station_name, " → ", end_station_name, " (", route_count, " rides)")
+  ) %>%
+  setView(lng = -87.63, lat = 41.91, zoom = 12) %>%
+  addControl("<strong>Top 10 Routes for Casuals (with self-loops jittered)</strong>", position = "topright")
+```
+
+The top 10 routes by casual users are concentrated along Chicago’s lakefront and Museum Campus, particularly around Millennium Park, Navy Pier, and the Shedd Aquarium—popular tourist destinations.
+
+## Share
+This phase will be done by presentation, but here we use R Markdown Notebook to share.
+
+### Main Insights and Conclusions
+
+1. User Type Strongly Influences Ride Behavior
+Members tend to take shorter, more frequent trips distributed across a wider geographic area, consistent with commuting, errands, or utilitarian use.
+Casual users typically take longer rides concentrated near tourist attractions and the lakefront, suggesting primarily recreational or sightseeing behavior.
+
+2. Spatial Mapping Deepens Understanding
+Spatial visualizations of start stations and top routes clearly differentiate the behavior of user types.
+Members dominate high-frequency routes in Hyde Park, the South Side, and the West Loop, aligning with local and routine use.
+Casual users are highly clustered along Chicago’s lakefront, including Millennium Park, Shedd Aquarium, and Navy Pier, highlighting a focus on leisure and sightseeing.
+
+## Act
+
+### Top 3 Marketing Actions to Convert Casual Users to annual Members
+
+1. Deploy Membership Promos in High-Casual Zones
+Casual riders are heavily concentrated near lakefront and downtown attractions such as Millennium Park, Navy Pier, and DuSable Harbor.
+Action: Deploy location-triggered promos (e.g., via QR codes at docking stations or geo-push notifications) offering trial memberships, discounted monthly rates, or priority bike access in these high-traffic casual zones.
+
+2. Educate Casual Riders on Membership Value
+Many casual riders take longer rides and self-loops, which may indicate a lack of awareness about cost savings with membership.
+Action: Use in-app nudges, ride-end receipts, or email follow-ups to showcase savings from joining.
+Target repeat casual users or those with rides over 20–30 minutes with messaging like:
+“You could’ve saved $X on this ride with membership.”
+Include comparisons to encourage conversion (“You’ve taken 4 rides this week—members ride free for the first 45 minutes!”).
+
+3. Run Weekend-Focused Membership Campaigns
+Casual usage peaks on weekends and afternoons, aligning with recreational patterns.
+Action: Run weekend-limited conversion campaigns:
+“Join today—ride free this weekend!” or “$1 Membership Trial—This Weekend Only.”
+Combine with event partnerships (e.g., Taste of Chicago, Air & Water Show) to offer bundled perks (e.g., ride credits with festival tickets or museum entries).
+
+
