@@ -8,7 +8,7 @@ This project analyzes 12 months of ride data from the Divvy/Cyclistic bike-share
 - Hourly, daily, and spatial patterns are visualized with interactive maps and charts.
 
 ## Files
-- `Cyclistic_new.Rmd` – Full R Markdown notebook (includes all code and commentary)
+- [`Cyclistic_new.Rmd`](Cyclistic_new.Rmd): Full source code and commentary.
 - [**Cyclistic_new.html**](https://mehran-ho.github.io/Cyclistic/Cyclistic_new.html) – Rendered HTML report with charts and interactive Leaflet maps
 
 ## Data Source
