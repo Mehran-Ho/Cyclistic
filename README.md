@@ -1,18 +1,20 @@
 # Cyclistic Bike Share Analysis
 
-This project analyzes 12 months of ride data from the Divvy/Cyclistic bike-share program in Chicago, comparing usage patterns between casual riders and annual members.
+This project analyzes 12 months of ride data from the Divvy/Cyclistic bike-share program in Chicago, comparing usage patterns between **casual riders** and **annual members**.
 
-## 📊 Key Insights
-- 🧑‍💼 Members ride more often and for commuting.
-- 🧳 Casual users take longer, leisure-oriented rides near tourist hotspots.
-- 🗺️ Maps and charts visualize hourly, daily, and spatial usage differences.
+## 🔍 Key Insights
+- 🧑‍💼 Members ride more frequently and primarily for commuting.
+- 🧳 Casual users take longer, leisure-oriented rides near tourist destinations.
+- 🗺️ Visualizations highlight differences by hour, day, and geography.
 
 ## 📁 Files
-- [`Cyclistic_new.Rmd`](Cyclistic_new.Rmd): Full source code and commentary.
-- [`Cyclistic_new.html`](https://mehran-ho.github.io/Cyclistic/Cyclistic_new.html): Interactive HTML report.
+- [`Cyclistic_new.Rmd`](Cyclistic_new.Rmd) – Full R Markdown file with source code and analysis.
+- [`Cyclistic_new.html`](Cyclistic_new.html) – Interactive HTML report.
 
-## 📂 Data Source
-[Divvy System Data Portal](https://divvy-tripdata.s3.amazonaws.com/index.html)
+## 🔗 Data Source
+- [Divvy System Data Portal](https://divvybikes.com/system-data)
 
-## Author
-Mehran Hojati
+## 👤 Author
+**Mehran Hojati**  
+Retired OR Professor | Google Data Analytics Certified  
+[LinkedIn Profile](https://www.linkedin.com/in/mehran-hojati/)
