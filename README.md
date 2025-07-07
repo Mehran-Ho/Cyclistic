@@ -8,10 +8,10 @@ This project analyzes 12 months of ride data from the Divvy/Cyclistic bike-share
 - 🗺️ Visualizations highlight differences by hour, day, and geography.
 
 ## 📁 Files
-- [`Cyclistic_new.Rmd`](Cyclistic_new.Rmd) – Full R Markdown file with source code and analysis.
-- [`Cyclistic_new.html`](Cyclistic_new.html) – Interactive HTML report.
-- [View this project on Kaggle](https://www.kaggle.com/code/raanhojati/cyclistic-bike-share-using-bigquery-and-tableau) – Published notebook with visuals and narrative.
-
+- [`Cyclistic_new.Rmd`](Cyclistic_new.Rmd): Full R Markdown source file.
+- **[Interactive Report (GitHub Pages)](https://mehran-ho.github.io/Cyclistic/)** – Viewable HTML report.
+- [Project on Kaggle](https://www.kaggle.com/code/raanhojati/cyclistic-bike-share-using-bigquery-and-tableau)
+  
 ## 🔗 Data Source
 - [Divvy System Data Portal](https://divvybikes.com/system-data)
 
